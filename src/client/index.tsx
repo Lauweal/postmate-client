@@ -27,7 +27,7 @@ export function PostmateProvider(props: any) {
         if (type === 'parent') {
             return new Postmate(options as any).then((res) => new PostMateParentClient(res));
         }
-        return new Model({
+        return new Postmate.Model({
             height: function () { return (document as any).height || document.body.offsetHeight; },
         }).then((res) => new PostMateChildClient(res));
     }
