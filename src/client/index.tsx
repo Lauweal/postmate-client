@@ -1,78 +1,83 @@
-import React, { createContext, useContext, useMemo, useRef } from "react";
-import Postmate, { Model } from 'postmate';
-import PostMateChildClient from "./child";
-import { IPostClientType, IPostMateOptions, IPostMateServices } from "./interface";
-import PostMateParentClient from "./parent";
+import React, { createContext, useCallback, useContext, useMemo, useRef } from "react";
+import Postmate from 'postmate';
+import { IPostMateOptions, Method, Response, ServiceFuc } from "./interface";
 import { groupLog } from "../log";
-import { Method } from "axios";
+import PostMateMainClient from "./main";
+import PostMateChildClient from "./children";
 
 export interface IPostmateContext {
-    open: (type: IPostClientType, options?: IPostMateOptions) => Promise<boolean>;
-    send: (method: Method, url: string, data?: any) => Promise<any>;
-    services: (method: Method, url: string, func: IPostMateServices) => void;
+    open: (options?: IPostMateOptions) => Promise<PostMateChildClient | PostMateChildClient | null>;
+    send?: <T = any>(method: Method, url: string, data?: any) => Promise<Response<T>>;
+    services: <P = any, T = any>(method: Method, url: string, func: ServiceFuc<P, T>) => void;
     remove: () => void;
 }
 
 export const PostmateContext = createContext<IPostmateContext>({
-    open: (type: IPostClientType, options?: IPostMateOptions) => Promise.resolve(false),
-    send: (method: Method, url: string, data?: any) => Promise.resolve(undefined),
-    services: (method: Method, url: string, func: IPostMateServices) => { },
+    open: (options?: IPostMateOptions) => Promise.resolve(null),
+    services: (method: Method, url: string, func: ServiceFuc) => { },
     remove: () => { }
 });
 
-export function PostmateProvider(props: any) {
-    const postmate = useRef<PostMateChildClient | PostMateParentClient | null>(null);
+export interface IPostmateProviderProps {
+    log: boolean; // 是否开启日志
+    name: string;
+    children: JSX.Element;
+}
 
-    const create = (type: IPostClientType, options?: IPostMateOptions): Promise<PostMateChildClient | PostMateParentClient> => {
-        if (type === 'parent') {
-            return new Postmate(options as any).then((res) => new PostMateParentClient(res));
-        }
-        return new Postmate.Model({
-            height: function () { return (document as any).height || document.body.offsetHeight; },
-        }).then((res) => new PostMateChildClient(res));
-    }
+export function PostmateProvider(props: IPostmateProviderProps) {
+    const { log, name } = props;
+    const logref = useRef(groupLog(name, log));
+    const container = useRef<HTMLElement>()
+    const postmate = useRef<PostMateChildClient | PostMateMainClient | null>(null);
 
-    const open = useMemo(() => {
-        return (type: IPostClientType, options?: IPostMateOptions) => {
-            if (postmate.current) {
-                postmate.current.remove();
-                postmate.current = null;
-            }
-            return create(type, options).then((res) => {
-                if (!res) return false;
-                groupLog('[SUCCESS] 初始化成功')
-                postmate.current = res;
-                return true;
-            })
+    const create = useCallback(async (options?: IPostMateOptions): Promise<PostMateChildClient | PostMateMainClient> => {
+        if (options) {
+            container.current = options?.container as any;
+            return await new Postmate(options as any).then((res) => new PostMateMainClient(res, groupLog(name, logref.current as any)));
         }
-    }, [postmate.current]);
+        return await new Postmate.Model({ height: function () { return (document as any).height || document.body.offsetHeight; }, }).then((res) => new PostMateChildClient(res, groupLog(name, logref.current as any)));
+    }, [log, name, logref.current]);
+
+    const open = useCallback((options?: IPostMateOptions) => {
+        if (postmate.current) {
+            postmate.current.remove();
+            postmate.current = null;
+        }
+        return create(options).then((res) => {
+            if (!res) return null;
+            logref.current("register", "初始化成功", res);
+            postmate.current = res;
+            return res;
+        })
+    }, [postmate.current, logref.current]);
 
     const send = useMemo(() => {
-        return (method: Method, url: string, data?: any) => {
-            if (!postmate.current) return Promise.resolve(undefined);
+        return (method: Method, url: string, data?: any): Promise<Response> => {
+            if (!postmate.current) return Promise.resolve({ code: -1, data: null, message: "异常" });
             return postmate.current.send(method, url, data);
         }
     }, [postmate.current]);
 
     const services = useMemo(() => {
-        return (method: Method, url: string, func: IPostMateServices) => {
+        return (method: Method, url: string, func: ServiceFuc) => {
             if (!postmate.current) return;
-            return postmate.current.services(method, url, func);
+            return postmate.current.service<any, any>(method, url, func);
         }
     }, [postmate.current]);
 
     const remove = useMemo(() => {
         return () => {
-            if (!postmate.current) return;
-            return postmate.current.remove();
+            if (!postmate.current || !container.current || !container.current.hasChildNodes()) return;
+            postmate.current.remove();
+            return postmate.current = null;
         }
-    }, [postmate.current])
+    }, [postmate.current, container.current])
 
     return (
         <PostmateContext.Provider
             value={{
-                open,
-                send,
+                open: open as any,
+                send: send as any,
                 services,
                 remove
             }}
