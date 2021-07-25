@@ -1,30 +1,20 @@
-import PostMateChildClient from './children';
-import PostMateMainClient from './main';
+export type ClientActions = "send" | "close" | "message" | "detect";
 
-export interface IMessage {
+export type ClientMessage = {
+    action: ClientActions;
+    type: string;
+    payload: any;
+}
+
+export type ClientPayload = {
     method: Method,
     url: string,
-    version: string,
+    version?: string,
     data?: any
 }
 
-export interface IPostMateOptions {
-    url: string;
-    container: HTMLElement | null;
-    name: string;
-    classListArray: string[];
-}
-export type IPostClientType = "child" | "parent";
-export type IPostMateClient = (options: IPostMateOptions) => Promise<PostMateChildClient | PostMateMainClient>;
-/**
- * 请求体
- */
-export interface IPostMateMessage {
-    method: Method;
-    version: string;
-    url: string;
-    data?: any;
-}
+export type ClientServices = (data: any) => any;
+
 
 export type Response<T = any> = {
     code: number;
